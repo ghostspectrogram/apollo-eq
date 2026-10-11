@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item "build/ApolloEQ_artefacts/Release/VST3/Apollo EQ.vst3" dist -Recurse
+          Copy-Item "build/ApolloEQ_artefacts/Release/Standalone/Apollo EQ.exe" dist
+          Compress-Archive -Path dist/* -DestinationPath ApolloEQ-Windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ApolloEQ-Windows-x64
+          path: ApolloEQ-Windows-x64.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" ApolloEQ-Windows-x64.zip --clobber

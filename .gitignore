@@ -1,0 +1,14 @@
+# Build output - regenerate with cmake (see README)
+build/
+out/
+dist/
+
+# IDE / editor
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+desktop.ini
