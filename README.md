@@ -60,9 +60,6 @@ target_link_libraries(MyDaw PRIVATE Apollo::apollo_eq)
 Added as a subproject it builds nothing extra (no plugin, no tests) and leaves your JUCE untouched.
 Your target needs C++20.
 
-For a **private** repo, the machine that builds needs GitHub access. On a dev box `gh auth setup-git`
-is enough, or use a git submodule.
-
 Projucer users: add `modules/apollo_eq` as a module path instead.
 
 ### 2. Run it
