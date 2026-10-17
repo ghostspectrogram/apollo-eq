@@ -82,6 +82,7 @@ namespace apollo
             std::atomic<float>* gain = nullptr;
             std::atomic<float>* q = nullptr;
             std::atomic<float>* slope = nullptr;
+            std::atomic<float>* stereo = nullptr;
         };
 
         struct BandRuntime
@@ -90,6 +91,7 @@ namespace apollo
             dsp::BandFilter filter;
             dsp::BandSettings current, target;
             double mix = 0.0, targetMix = 0.0;
+            std::array<double, 2> part { 1.0, 1.0 }, targetPart { 1.0, 1.0 };     // how much of the mid / side it works on (Stereo: both)
             bool smoothing = false;
         };
 

@@ -17,6 +17,7 @@ namespace apollo
             p.gain = hasGain (type) ? apvts.getRawParameterValue (ids::gain (b)) : nullptr;
             p.q = hasQ (type) ? apvts.getRawParameterValue (ids::q (b)) : nullptr;
             p.slope = hasSlope (type) ? apvts.getRawParameterValue (ids::slope (b)) : nullptr;
+            p.stereo = apvts.getRawParameterValue (ids::stereo (b));
             bands[(size_t) b].type = type;
         }
 
@@ -67,6 +68,8 @@ namespace apollo
             r.target.q = p.q != nullptr ? p.q->load() : shelfQ;
             r.target.order = p.slope != nullptr ? (int) p.slope->load() + 1 : 2;
             r.targetMix = p.on->load() > 0.5f ? 1.0 : 0.0;
+            const auto part = (StereoPart) juce::jlimit (0, 2, (int) p.stereo->load());
+            r.targetPart = { part == StereoPart::side ? 0.0 : 1.0, part == StereoPart::mid ? 0.0 : 1.0 };
 
             if (r.target.order != r.current.order)
             {
@@ -77,7 +80,7 @@ namespace apollo
             }
 
             if (r.target.freq != r.current.freq || r.target.gainDb != r.current.gainDb
-                || r.target.q != r.current.q || r.targetMix != r.mix)
+                || r.target.q != r.current.q || r.targetMix != r.mix || r.targetPart != r.part)
                 r.smoothing = true;
         }
     }
@@ -92,6 +95,7 @@ namespace apollo
         {
             r.current = r.target;
             r.mix = r.targetMix;
+            r.part = r.targetPart;
             r.smoothing = false;
             r.filter.reset();
             r.filter.configure (r.type, r.current, filterRate);
@@ -128,6 +132,14 @@ namespace apollo
 
         approach (r.mix, r.targetMix, 1e-4);
 
+        for (int c = 0; c < 2; ++c)
+        {
+            if (r.part[(size_t) c] == 0.0 && r.targetPart[(size_t) c] > 0.0)
+                r.filter.resetChannel (c); // the mid or side joins again: from silence, as above
+
+            approach (r.part[(size_t) c], r.targetPart[(size_t) c], 1e-4);
+        }
+
         r.filter.configure (r.type, r.current, fs);
         r.smoothing = ! done;
     }
@@ -143,6 +155,36 @@ namespace apollo
                 if (r.smoothing)
                     advance (r, fs);
 
+            if (numCh == 2)
+            {
+                // Stereo always runs as mid and side (filter channel 0 = mid, 1 = side). The filters are linear and the same on both,
+                // so Stereo bands sound exactly as they do on left and right; Mid and Side bands leave the other part alone.
+                auto* l = block.getChannelPointer (0);
+                auto* rt = block.getChannelPointer (1);
+                double ms[2] = { 0.5 * ((double) l[i] + rt[i]), 0.5 * ((double) l[i] - rt[i]) };
+
+                for (auto& r : bands)
+                {
+                    if (r.mix <= 0.0)
+                        continue;
+
+                    for (int c = 0; c < 2; ++c)
+                    {
+                        const double w = r.mix * r.part[(size_t) c];
+
+                        if (w <= 0.0)
+                            continue;
+
+                        const double y = r.filter.process (c, ms[c]);
+                        ms[c] += w * (y - ms[c]);
+                    }
+                }
+
+                l[i] = (float) (ms[0] + ms[1]);
+                rt[i] = (float) (ms[0] - ms[1]);
+                continue;
+            }
+
             for (int ch = 0; ch < numCh; ++ch)
             {
                 auto* d = block.getChannelPointer ((size_t) ch);
@@ -150,11 +192,13 @@ namespace apollo
 
                 for (auto& r : bands)
                 {
-                    if (r.mix <= 0.0)
+                    const double w = r.mix * r.part[0]; // (mono is all mid: a Side band leaves it alone)
+
+                    if (w <= 0.0)
                         continue;
 
                     const double y = r.filter.process (ch, x);
-                    x += r.mix * (y - x);
+                    x += w * (y - x);
                 }
 
                 d[i] = (float) x;

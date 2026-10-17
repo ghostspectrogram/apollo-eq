@@ -5,7 +5,8 @@ namespace apollo
     namespace
     {
         constexpr int userIdBase = 1000;
-        const char* rowLabels[] = { "Frequency", "Gain", "Q / Width", "Band" };
+        const char* rowLabels[] = { "Frequency", "Gain", "Q / Width", "Channels", "Band" };
+        constexpr int numRows = 5;
     }
 
     ApolloEditor::ApolloEditor (ApolloProcessor& p)
@@ -105,6 +106,12 @@ namespace apollo
                 addAndMakeVisible (*col.slope);
             }
 
+            col.stereo = std::make_unique<juce::ComboBox>();
+            col.stereo->addItemList (stereoPartNames, 1);
+            col.stereo->setTooltip ("Stereo: both channels. Mid: only what the left and right share (the center). Side: only their difference (the width).");
+            col.stereoAttachment = std::make_unique<juce::ComboBoxParameterAttachment> (param (ids::stereo (b)), *col.stereo);
+            addAndMakeVisible (*col.stereo);
+
             col.toggle = std::make_unique<juce::TextButton> (bandSpecs[(size_t) b].label);
             col.toggle->setClickingTogglesState (true);
             col.toggle->setTooltip (juce::String ("Turn ") + bandSpecs[(size_t) b].name + " on or off");
@@ -125,7 +132,7 @@ namespace apollo
 
         setResizable (true, true);
         setResizeLimits (820, 520, 1800, 1100);
-        setSize (940, 600);
+        setSize (940, 628);
         startTimerHz (10);
     }
 
@@ -278,7 +285,7 @@ namespace apollo
             const float alpha = param (ids::on (b)).getValue() > 0.5f ? 1.0f : 0.4f;
             auto& col = columns[(size_t) b];
 
-            for (auto* c : std::initializer_list<juce::Component*> { col.freq.get(), col.gain.get(), col.q.get(), col.slope.get() })
+            for (auto* c : std::initializer_list<juce::Component*> { col.freq.get(), col.gain.get(), col.q.get(), col.slope.get(), col.stereo.get() })
                 if (c != nullptr && c->getAlpha() != alpha)
                     c->setAlpha (alpha);
 
@@ -333,7 +340,7 @@ namespace apollo
         g.setColour (textDim);
         g.setFont (juce::FontOptions (12.5f));
 
-        for (int row = 0; row < 4; ++row)
+        for (int row = 0; row < numRows; ++row)
             g.drawText (rowLabels[row], gridArea.getX(), gridArea.getY() + row * rowHeight, labelWidth - 12, rowHeight, juce::Justification::centredRight);
 
         for (int b = 1; b < numBands; ++b)
@@ -383,7 +390,7 @@ namespace apollo
         }
 
         auto content = area.reduced (12, 0);
-        gridArea = content.removeFromBottom (4 * rowHeight + 14).withTrimmedBottom (8);
+        gridArea = content.removeFromBottom (numRows * rowHeight + 14).withTrimmedBottom (8);
         content.removeFromTop (12);
         content.removeFromBottom (8);
 
@@ -404,7 +411,7 @@ namespace apollo
             auto& col = columns[(size_t) b];
             const int x0 = cols.getX() + juce::roundToInt ((float) b * colWidth);
             const int x1 = cols.getX() + juce::roundToInt ((float) (b + 1) * colWidth);
-            col.bounds = { x0, cols.getY(), x1 - x0, 4 * rowHeight };
+            col.bounds = { x0, cols.getY(), x1 - x0, numRows * rowHeight };
 
             auto cell = [&] (int row) { return juce::Rectangle<int> (x0, cols.getY() + row * rowHeight, x1 - x0, rowHeight).reduced (4, 2); };
 
@@ -414,7 +421,8 @@ namespace apollo
             if (col.slope != nullptr) col.slope->setBounds (cell (1).reduced (0, 1));
             if (col.q != nullptr)     col.q->setBounds (cell (2));
 
-            col.toggle->setBounds (cell (3).withSizeKeepingCentre (std::min (44, cell (3).getWidth()), 22));
+            col.stereo->setBounds (cell (3).reduced (0, 1));
+            col.toggle->setBounds (cell (4).withSizeKeepingCentre (std::min (44, cell (4).getWidth()), 22));
         }
 
         if (dialog != nullptr)

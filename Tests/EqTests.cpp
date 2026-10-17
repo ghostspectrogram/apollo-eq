@@ -234,6 +234,75 @@ namespace
         check (walkie.name == "Walkie Talkie", "Walkie Talkie preset present");
     }
 
+    /** Gain at f of the left output for a sine fed as left = s, right = rightSign * s (1: pure mid, -1: pure side). */
+    double measureLrDb (ApolloProcessor& p, double f, double fs, float rightSign)
+    {
+        const int total = (int) (fs * 1.0), settle = (int) (fs * 0.6);
+        juce::AudioBuffer<float> buf (2, total);
+
+        for (int i = 0; i < total; ++i)
+        {
+            const float x = 0.1f * (float) std::sin (2.0 * dsp::pi * f * i / fs);
+            buf.setSample (0, i, x);
+            buf.setSample (1, i, rightSign * x);
+        }
+
+        run (p, buf);
+        double in = 0, out = 0;
+
+        for (int i = settle; i < total; ++i)
+        {
+            const double x = 0.1 * std::sin (2.0 * dsp::pi * f * i / fs);
+            in += x * x;
+            out += (double) buf.getSample (0, i) * buf.getSample (0, i);
+        }
+
+        return 10.0 * std::log10 (out / in);
+    }
+
+    void testMidSide()
+    {
+        std::cout << "Mid / Side bands\n";
+        const double fs = 48000.0;
+
+        auto boosted = [fs] (int part)
+        {
+            auto p = makeProcessor (0, false, fs);
+            setParam (*p, ids::on (band::b3), 1.0f);
+            setParam (*p, ids::freq (band::b3), 1000.0f);
+            setParam (*p, ids::gain (band::b3), 12.0f);
+            setParam (*p, ids::q (band::b3), 1.0f);
+            setParam (*p, ids::stereo (band::b3), (float) part);
+            p->prepareToPlay (fs, 1024);
+            return p;
+        };
+
+        auto near = [] (double got, double want) { return std::abs (got - want) < 0.15; };
+
+        for (int part = 0; part < 3; ++part)
+        {
+            const auto name = stereoPartNames[part];
+            const double mid = measureLrDb (*boosted (part), 1000.0, fs, 1.0f), sideDb = measureLrDb (*boosted (part), 1000.0, fs, -1.0f);
+            const double wantMid = part == 2 ? 0.0 : 12.0, wantSide = part == 1 ? 0.0 : 12.0;
+            check (near (mid, wantMid) && near (sideDb, wantSide), name + " band, +12 dB at 1 kHz: mid " + juce::String (mid, 2) + " dB (want "
+                                                                     + juce::String (wantMid) + "), side " + juce::String (sideDb, 2) + " dB (want " + juce::String (wantSide) + ")");
+        }
+
+        // A Stereo band still boosts a sound on the left channel alone, as before.
+        {
+            auto p = boosted (0);
+            check (near (measureLrDb (*p, 1000.0, fs, 0.0f), 12.0), "Stereo band on the left channel alone");
+        }
+
+        // Loading a factory preset puts every band back to Stereo.
+        {
+            ApolloProcessor a;
+            setParam (a, ids::stereo (band::b2), 2.0f);
+            a.presets.loadFactory (1);
+            check (juce::roundToInt (getParam (a, ids::stereo (band::b2))) == 0, "factory preset resets Channels to Stereo");
+        }
+    }
+
     void testLatency()
     {
         std::cout << "Latency reporting\n";
@@ -244,10 +313,19 @@ namespace
     }
 }
 
-/** ApolloTests --snapshot <out.png> <preset index>: renders the editor, feeding pink-ish noise to the analyser. */
-static int snapshot (const juce::String& path, int preset)
+/** ApolloTests --snapshot <out.png> <preset index> [midside]: renders the editor, feeding pink-ish noise to the analyser.
+    "midside" also puts Band 4 on the side only, +6 dB at 4 kHz, to show the Side curve. */
+static int snapshot (const juce::String& path, int preset, bool midSide)
 {
     auto p = makeProcessor (preset, false, 44100.0);
+
+    if (midSide)
+    {
+        setParam (*p, ids::on (band::b4), 1.0f);
+        setParam (*p, ids::freq (band::b4), 4000.0f);
+        setParam (*p, ids::gain (band::b4), 6.0f);
+        setParam (*p, ids::stereo (band::b4), 2.0f);
+    }
     std::unique_ptr<juce::AudioProcessorEditor> editor (p->createEditor());
     p->analyser.active = true;
 
@@ -282,10 +360,11 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI juce;
 
     if (argc >= 4 && juce::String (argv[1]) == "--snapshot")
-        return snapshot (argv[2], juce::String (argv[3]).getIntValue());
+        return snapshot (argv[2], juce::String (argv[3]).getIntValue(), argc >= 5 && juce::String (argv[4]) == "midside");
 
     testState();
     testLatency();
+    testMidSide();
     testBlockIndependence();
     testExtremes();
     testResponse (false);

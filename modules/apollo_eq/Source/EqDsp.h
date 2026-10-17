@@ -131,6 +131,7 @@ namespace apollo::dsp
         }
 
         void reset() { state = {}; }
+        void resetChannel (int channel) { state[(size_t) channel] = {}; }
 
     private:
         struct ChannelState

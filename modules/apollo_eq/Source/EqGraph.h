@@ -35,6 +35,7 @@ namespace apollo
             juce::RangedAudioParameter* gain = nullptr;
             juce::RangedAudioParameter* q = nullptr;
             juce::RangedAudioParameter* slope = nullptr;
+            juce::RangedAudioParameter* stereo = nullptr;
         };
 
         void timerCallback() override;
@@ -47,7 +48,9 @@ namespace apollo
         bool isOn (int b) const { return valueOf (params[(size_t) b].on) > 0.5f; }
         dsp::BandSettings settingsFor (int b) const;
         double bandDb (int b, double f) const;
-        double totalDb (double f) const;
+        StereoPart partOf (int b) const { return (StereoPart) juce::jlimit (0, 2, juce::roundToInt (valueOf (params[(size_t) b].stereo))); }
+        bool anyMidSide() const;
+        double totalDb (double f, StereoPart which = StereoPart::mid) const; // the mid's response (all of it with no Mid / Side bands), or the side's
         double displayRange() const { return valueOf (range96) > 0.5f ? 48.0 : 15.0; }
 
         float xForFreq (double f) const;

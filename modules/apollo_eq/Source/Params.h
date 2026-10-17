@@ -36,6 +36,12 @@ namespace apollo
         { "hs", "H",  "High Shelf", BandType::highShelf, 18000.0f, true  },
         { "lp", "LP", "Low-Pass",   BandType::lowPass,   18000.0f, false } } };
 
+    /** Which part of a stereo signal a band works on: both channels as they are, only the mid (L+R), or only the side (L-R).
+        Mono input is all mid, so a Side band does nothing there. */
+    enum class StereoPart { stereo, mid, side };
+    inline const juce::StringArray stereoPartNames { "Stereo", "Mid", "Side" };
+    inline const char* stereoPartShort (StereoPart p) { return p == StereoPart::mid ? "M" : p == StereoPart::side ? "S" : ""; }
+
     constexpr bool hasGain (BandType t)  { return t == BandType::lowShelf || t == BandType::peak || t == BandType::highShelf; }
     constexpr bool hasQ (BandType t)     { return t == BandType::peak; }
     constexpr bool hasSlope (BandType t) { return t == BandType::highPass || t == BandType::lowPass; }
@@ -55,6 +61,7 @@ namespace apollo
         inline juce::String gain (int b)  { return bandParam (b, "gain"); }
         inline juce::String q (int b)     { return bandParam (b, "q"); }
         inline juce::String slope (int b) { return bandParam (b, "slope"); }
+        inline juce::String stereo (int b) { return bandParam (b, "stereo"); } // Stereo / Mid / Side
 
         inline constexpr const char* master        = "master";
         inline constexpr const char* ultraQuiet    = "ultra_quiet";
@@ -155,6 +162,11 @@ namespace apollo
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { ids::constantWidth, 1 }, "Constant Width", false));
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { ids::range96, 1 }, "96 dB Range", false));
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { ids::analyser, 1 }, "Analyzer", true));
+
+        // Added in 1.1, after everything else so the older parameters keep their place in hosts that count them.
+        for (int b = 0; b < numBands; ++b)
+            layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ids::stereo (b), 2 }, String (bandSpecs[(size_t) b].name) + " Channels",
+                                                                stereoPartNames, 0));
         return layout;
     }
 }

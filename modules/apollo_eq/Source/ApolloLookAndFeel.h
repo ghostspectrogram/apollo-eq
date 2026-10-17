@@ -18,6 +18,7 @@ namespace apollo
         const juce::Colour bright     { 0xfff2f4f7 };
         const juce::Colour accent     { 0xff4f95ff };
         const juce::Colour accentSoft { 0xff8fbaff };
+        const juce::Colour side       { 0xffffb04f }; // the Side curve, when a band works on mid or side only
     }
 
     class LookAndFeel : public juce::LookAndFeel_V4

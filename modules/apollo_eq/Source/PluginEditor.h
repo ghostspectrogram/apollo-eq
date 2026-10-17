@@ -21,6 +21,8 @@ namespace apollo
             std::unique_ptr<ValueBox> freq, gain, q;
             std::unique_ptr<juce::ComboBox> slope;
             std::unique_ptr<juce::ComboBoxParameterAttachment> slopeAttachment;
+            std::unique_ptr<juce::ComboBox> stereo;
+            std::unique_ptr<juce::ComboBoxParameterAttachment> stereoAttachment;
             std::unique_ptr<juce::TextButton> toggle;
             std::unique_ptr<juce::ButtonParameterAttachment> toggleAttachment;
             juce::Rectangle<int> bounds;

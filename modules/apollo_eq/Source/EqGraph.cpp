@@ -22,6 +22,7 @@ namespace apollo
             bp.gain = hasGain (type) ? get (ids::gain (b)) : nullptr;
             bp.q = hasQ (type) ? get (ids::q (b)) : nullptr;
             bp.slope = hasSlope (type) ? get (ids::slope (b)) : nullptr;
+            bp.stereo = get (ids::stereo (b));
         }
 
         range96 = get (ids::range96);
@@ -60,12 +61,21 @@ namespace apollo
         return dsp::magnitudeDb (bandSpecs[(size_t) b].type, settingsFor (b), f, fs);
     }
 
-    double EqGraph::totalDb (double f) const
+    bool EqGraph::anyMidSide() const
+    {
+        for (int b = 0; b < numBands; ++b)
+            if (isOn (b) && partOf (b) != StereoPart::stereo)
+                return true;
+
+        return false;
+    }
+
+    double EqGraph::totalDb (double f, StereoPart which) const
     {
         double db = 0.0;
 
         for (int b = 0; b < numBands; ++b)
-            if (isOn (b))
+            if (isOn (b) && (partOf (b) == StereoPart::stereo || partOf (b) == which))
                 db += bandDb (b, f);
 
         return db;
@@ -132,6 +142,7 @@ namespace apollo
         if (bp.gain != nullptr)  s << "   " << formatGain (valueOf (bp.gain));
         if (bp.q != nullptr)     s << "   " << (valueOf (constantWidth) > 0.5f ? formatWidth (valueOf (bp.q)) : "Q " + formatQ (valueOf (bp.q)));
         if (bp.slope != nullptr) s << "   " << formatSlope (juce::roundToInt (valueOf (bp.slope)));
+        if (partOf (b) != StereoPart::stereo) s << "   " << stereoPartNames[(int) partOf (b)] << " only";
         if (! isOn (b))          s << "   (off)";
 
         return s;
@@ -309,23 +320,49 @@ namespace apollo
             g.fillPath (area);
         }
 
-        // Combined response.
-        juce::Path curve;
-
-        for (float x = plot.getX(); x <= plot.getRight() + 1.0f; x += 1.5f)
+        // Combined response. With Mid or Side bands: the mid's (blue) and the side's (orange), each named at the top left.
+        auto responsePath = [this] (StereoPart which)
         {
-            const float y = yForDb (totalDb (freqForX (x)));
+            juce::Path curve;
 
-            if (x == plot.getX())
-                curve.startNewSubPath (x, y);
-            else
-                curve.lineTo (x, y);
+            for (float x = plot.getX(); x <= plot.getRight() + 1.0f; x += 1.5f)
+            {
+                const float y = yForDb (totalDb (freqForX (x), which));
+
+                if (x == plot.getX())
+                    curve.startNewSubPath (x, y);
+                else
+                    curve.lineTo (x, y);
+            }
+
+            return curve;
+        };
+
+        const bool split = anyMidSide();
+
+        if (split)
+        {
+            const auto sideCurve = responsePath (StereoPart::side);
+            g.setColour (side.withAlpha (0.16f));
+            g.strokePath (sideCurve, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.setColour (side);
+            g.strokePath (sideCurve, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
 
+        const auto curve = responsePath (StereoPart::mid);
         g.setColour (accent.withAlpha (0.18f)); // glow
         g.strokePath (curve, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.setColour (accent);
         g.strokePath (curve, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        if (split)
+        {
+            g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+            g.setColour (accent);
+            g.drawText ("MID", juce::Rectangle<float> (plot.getX() + 10.0f, plot.getY() + 8.0f, 40.0f, 14.0f), juce::Justification::centredLeft);
+            g.setColour (side);
+            g.drawText ("SIDE", juce::Rectangle<float> (plot.getX() + 44.0f, plot.getY() + 8.0f, 40.0f, 14.0f), juce::Justification::centredLeft);
+        }
 
         // Nodes.
         for (int b = 0; b < numBands; ++b)
@@ -356,7 +393,8 @@ namespace apollo
 
             g.setColour (on ? (hot ? bright : text) : textDim.withAlpha (0.5f));
             g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
-            g.drawText (bandSpecs[(size_t) b].label, juce::Rectangle<float> (30.0f, 14.0f).withCentre (pos.translated (0.0f, -15.0f)), juce::Justification::centred);
+            g.drawText (juce::String (bandSpecs[(size_t) b].label) + stereoPartShort (partOf (b)),
+                        juce::Rectangle<float> (30.0f, 14.0f).withCentre (pos.translated (0.0f, -15.0f)), juce::Justification::centred);
         }
 
         g.restoreState();
@@ -531,6 +569,11 @@ namespace apollo
         }
 
         menu.addSeparator();
+
+        for (int i = 0; i < 3; ++i)
+            menu.addItem (200 + i, i == 0 ? juce::String ("Stereo (both channels)") : stereoPartNames[i] + " only", true, (int) partOf (b) == i);
+
+        menu.addSeparator();
         menu.addItem (2, "Reset Band");
 
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(),
@@ -543,10 +586,12 @@ namespace apollo
 
                 if (result == 1)
                     setGesture (p.on, isOn (b) ? 0.0f : 1.0f);
+                else if (result >= 200)
+                    setGesture (p.stereo, (float) (result - 200));
                 else if (result >= 100)
                     setGesture (p.slope, (float) (result - 100));
                 else if (result == 2)
-                    for (auto* param : { p.freq, p.gain, p.q, p.slope })
+                    for (auto* param : { p.freq, p.gain, p.q, p.slope, p.stereo })
                         if (param != nullptr)
                             setGesture (param, param->convertFrom0to1 (param->getDefaultValue()));
             });

@@ -223,6 +223,8 @@ namespace apollo
             if (hasGain (type))  setParam (ids::gain (b), bp.gain);
             if (hasQ (type))     setParam (ids::q (b), bp.q);
             if (hasSlope (type)) setParam (ids::slope (b), (float) bp.slope);
+
+            setParam (ids::stereo (b), 0.0f); // factory presets are all Stereo
         }
 
         setParam (ids::master, preset.master);
@@ -239,6 +241,9 @@ namespace apollo
             return false;
 
         applying = true;
+
+        for (int b = 0; b < numBands; ++b)
+            setParam (ids::stereo (b), 0.0f); // presets saved before 1.1 have no Channels: Stereo
 
         for (auto* param : xml->getChildWithTagNameIterator ("PARAM"))
         {
